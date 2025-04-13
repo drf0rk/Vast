@@ -169,6 +169,7 @@ EXTENSIONS=(
   "https://github.com/toriato/stable-diffusion-webui-wd14-tagger.git"
   "https://github.com/adieyal/sd-dynamic-prompts.git"
   "https://github.com/ControlNet-org/ControlNet-v1-Unified.git"
+  "https://github.com/d8ahazard/sd_dreambooth_extension.git"
 )
 
 # Install extensions
@@ -184,6 +185,12 @@ for ext in "${EXTENSIONS[@]}"; do
     cd $ext_name
     git pull || log_warning "Failed to update $ext_name, continuing..."
     cd ..
+  fi
+  
+  # Install extension-specific requirements
+  if [ -d "$ext_name" ] && [ -f "$ext_name/requirements.txt" ]; then
+    log_info "Installing dependencies for $ext_name..."
+    pip install -r "$ext_name/requirements.txt" || log_warning "Failed to install dependencies for $ext_name, continuing..."
   fi
 done
 
@@ -221,12 +228,43 @@ for i in "${!TARGETED_URLS[@]}"; do
   provisioning_download_targeted "${TARGETED_URLS[$i]}" "${TARGETED_PATHS[$i]}"
 done
 
-# Define models to download
-LORA_MODELS=(
-  "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
-  "https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0/resolve/main/sd_xl_refiner_1.0.safetensors"
+# Remove default models if they exist
+log_info "Cleaning up default models..."
+DEFAULT_MODELS=(
+  "$A1111_DIR/models/Stable-diffusion/v1-5-pruned-emaonly.safetensors"
+  "$A1111_DIR/models/Stable-diffusion/sd_xl_base_1.0.safetensors"
+  "$A1111_DIR/models/Stable-diffusion/sd_xl_refiner_1.0.safetensors"
 )
 
+for model in "${DEFAULT_MODELS[@]}"; do
+  if [ -f "$model" ]; then
+    log_info "Removing default model: $(basename "$model")"
+    rm -f "$model"
+  fi
+done
+
+# Download Schlip model with retries
+log_info "Downloading Schlip model..."
+SCHLIP_URL="https://huggingface.co/Red1618/tEST2/resolve/main/Schlip.safetensors"
+SCHLIP_PATH="$A1111_DIR/models/Stable-diffusion/Schlip.safetensors"
+
+for attempt in {1..10}; do
+  log_info "Download attempt $attempt/10..."
+  
+  if wget -q --show-progress -c "$SCHLIP_URL" -O "$SCHLIP_PATH"; then
+    log_info "Schlip model download successful"
+    break
+  else
+    log_warning "Attempt $attempt/10 failed. Retrying in 15 seconds..."
+    sleep 15
+    
+    if [ $attempt -eq 10 ]; then
+      log_error "Failed to download Schlip model after 10 attempts."
+    fi
+  fi
+done
+
+# Download ControlNet models if needed
 CONTROLNET_MODELS=(
   "https://huggingface.co/lllyasviel/sd_control_collection/resolve/main/diffusers_xl_canny_mid.safetensors"
   "https://huggingface.co/lllyasviel/sd_control_collection/resolve/main/diffusers_xl_depth_mid.safetensors"
@@ -249,16 +287,19 @@ download_model() {
   fi
 }
 
-# Download models
-log_info "Downloading Lora models..."
-for model in "${LORA_MODELS[@]}"; do
-  download_model "$model" "$A1111_DIR/models/Stable-diffusion"
-done
-
+# Download ControlNet models
 log_info "Downloading ControlNet models..."
 for model in "${CONTROLNET_MODELS[@]}"; do
   download_model "$model" "$A1111_DIR/models/ControlNet"
 done
+
+# Verify model existence
+log_info "Verifying critical model files..."
+if [ -f "$SCHLIP_PATH" ]; then
+  log_info "Schlip model successfully installed: $(ls -lh "$SCHLIP_PATH")"
+else
+  log_error "Schlip model not found at expected location!"
+fi
 
 # Enforce required arguments
 ENFORCED_ARGS="--xformers --api --no-half-vae"
