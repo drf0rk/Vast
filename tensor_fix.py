@@ -1,8 +1,3 @@
-Okay, here is the complete content of the tensor_fix.py script from the GitHub link you provided, with the necessary modification to fix the TypeError.
-
-Explanation of the Change:
-
-The only change is in the definition of the fix_tensors function. I have removed the , clip argument because the WebUI's on_model_loaded callback no longer provides it, and this specific function didn't actually use the clip variable anyway.
 
 # tensor_fix.py
 # --- MODIFIED ---
